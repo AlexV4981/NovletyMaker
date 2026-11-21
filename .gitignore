@@ -1,0 +1,8 @@
+# Do not publish real users' private taste or output history
+my-preferences.json
+*.preferences.json
+noveltyforge-history.json
+noveltyforge-output/
+__pycache__/
+*.pyc
+.pytest_cache/
