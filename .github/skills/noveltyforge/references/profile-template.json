@@ -1,0 +1,19 @@
+{
+  "profile_version": "2.0",
+  "status": "unconfirmed",
+  "confirmed_by_user": false,
+  "preference_summary_confirmed": false,
+  "medium": "character reference sheets",
+  "likes": [
+    "Replace with a real preference expressed by the current user",
+    "Replace with a second confirmed preference",
+    "Replace with a third confirmed preference"
+  ],
+  "dislikes": [
+    "Replace with an actual disliked design pattern",
+    "Replace with a second confirmed dislike"
+  ],
+  "rated_examples": [],
+  "notes": "This file ships UNCONFIRMED intentionally. The AI does not automatically know tastes. Real profiles should not be committed publicly.",
+  "confirmation_evidence": "Replace with the real user confirmation or direct rating source (private local profile only)"
+}
