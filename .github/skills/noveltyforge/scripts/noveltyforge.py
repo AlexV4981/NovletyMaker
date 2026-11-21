@@ -292,4 +292,112 @@ def select_item(options: list[str], value: int) -> str:
 
 
 def make_candidate(master_seed: int, number: int, attempt: int) -> dict:
-    rolls = {a: roll(master_seed, number, a
+    rolls = {a: roll(master_seed, number, attempt, a) for a in ASPECTS}
+    selected = {a: select_item(CATALOG[a], rolls[a]) for a in CATALOG}
+    influence = rolls["preference_influence"]
+    strength = "subtle" if influence <= 300 else "balanced" if influence <= 750 else "strong"
+    return {
+        "number": number,
+        "candidate_attempt": attempt,
+        "rolls_1_to_1000": rolls,
+        "preference_translation_strength": strength,
+        "selected": selected,
+    }
+
+
+def normalize(s: str) -> str:
+    return re.sub(r"[^\w]+", " ", s.casefold()).strip()
+
+
+def features_of(entry: dict) -> dict[str, str]:
+    observed = entry.get("observed_features")
+    if isinstance(observed, dict) and observed:
+        return {x: str(observed.get(x, entry.get("selected", {}).get(x, ""))) for x in CHECK_FEATURES}
+    raw = entry.get("selected", entry.get("features", {}))
+    return {x: str(raw.get(x, "")) for x in CHECK_FEATURES} if isinstance(raw, dict) else {}
+
+
+def collision(candidate: dict, previous: list[dict]) -> str | None:
+    c = features_of(candidate)
+    for p in previous:
+        f = features_of(p)
+        for key in HARD_UNIQUE:
+            if c.get(key) and f.get(key) and normalize(c[key]) == normalize(f[key]):
+                return f"same {key} as previous concept"
+        weighted = {"role": 4, "garment_architecture": 4, "silhouette": 3,
+                    "motif": 2, "prop": 2, "hair": 1, "palette": 1, "material": 1}
+        overlap = sum(w for k, w in weighted.items()
+                      if c.get(k) and f.get(k) and normalize(c[k]) == normalize(f[k]))
+        if overlap >= 5:
+            return f"excessive combined overlap ({overlap})"
+    return None
+
+
+def load_history(path: Path) -> dict:
+    if not path.exists():
+        return {"history_version": "1.0", "entries": []}
+    obj = load_json(path)
+    if not isinstance(obj, dict) or not isinstance(obj.get("entries"), list):
+        raise ValueError("History must be a JSON object with an 'entries' array.")
+    return obj
+
+
+def char_id(master_seed: int, number: int, attempt: int) -> str:
+    source = f"{master_seed}:{number}:{attempt}"
+    return "nf-" + hashlib.sha256(source.encode("utf-8")).hexdigest()[:12]
+
+
+def make_prompt(item: dict, profile: dict, mode: str = "personalized") -> str:
+    c = item["selected"]
+    if mode == "personalized":
+        likes = "\n".join(f"- {x}" for x in profile["likes"])
+        dislikes = "\n".join(f"- {x}" for x in profile["dislikes"])
+        preference_section = f"""## Preference translation: {item['preference_translation_strength']} emphasis
+
+The current user confirmed these quality criteria. Improve execution without changing the independent concept.
+
+Liked / desired qualities:
+{likes}
+
+Disliked / rejected patterns:
+{dislikes}
+
+Preference influence is **{item['preference_translation_strength']}**. Ratings alone do not prove which individual traits the user likes.
+"""
+    elif mode == "unpersonalized-forced":
+        preference_section = """## UNPERSONALIZED FORCED MODE — DISCLAIMER
+
+This prompt has **no confirmed user-preference profile**. A user explicitly chose to bypass calibration.
+These results can be varied but **are NOT personalized to their taste**. Expect generic aesthetic decisions, weaker appeal consistency, and possible repetition. Do not claim to know the user's preferences.
+
+Apply basic, nonpersonal design craft only: readable silhouettes, coherent material choices, expressive faces and deliberate outfit construction. Do not invent user likes or dislikes. Preference calibration and actual visual review are still recommended.
+"""
+    else:
+        raise ValueError(f"Unknown generation mode: {mode}")
+    return f"""# One original character sheet — {item['id']}
+
+Generate **exactly one** original adult character as a polished, production-ready reference sheet. This request is for a **single character only**; no multi-character grid or collage, no second character concept, no variations of earlier AI-made characters.
+
+## Locked independent blueprint
+
+- Narrative role: {c['role']}
+- Personality: {c['personality']}
+- Silhouette: {c['silhouette']}
+- Outfit construction: {c['garment_architecture']}
+- Hair: {c['hair']}
+- Color harmony: {c['palette']}
+- Materials: {c['material']}
+- Signature motif: {c['motif']}
+- Character-specific prop: {c['prop']}
+
+Treat these as **different, deliberately selected design variables**, not a menu of aesthetics to fuse into a conventional anime costume. Reconcile the details into a coherent and appealing design while preserving the outfit architecture and silhouette. Do not substitute an unplanned generic coat, decorative harness, repeated hair ornament, or previously seen character template.
+
+{preference_section}
+## Required reference sheet
+
+- One dominant polished hero illustration: {c['pose']}.
+- Hero framing / camera: {c['camera']}.
+- Clear front, side, back and optional three-quarter **consistent** full-body views of this same character.
+- A small grid of distinctive expressions and eye/face details.
+- Exploded garment construction: identifiable separate pieces and fabric/material closeups.
+- Props, motif
