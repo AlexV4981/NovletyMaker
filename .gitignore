@@ -6,3 +6,7 @@ noveltyforge-output/
 __pycache__/
 *.pyc
 .pytest_cache/
+# Local ComfyUI execution artifacts / references
+noveltyforge-render-jobs.json
+workflow_api.json
+references-private/
