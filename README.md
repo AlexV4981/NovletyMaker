@@ -127,6 +127,10 @@ The planner uses Python 3.10+ and no external Python dependencies.
 - Preserve personal preference and history files privately unless the user explicitly authorizes publication.
 - Results depend on the downstream agent, image model, and available history. **No numeric reduction in repetition has been validated.**
 
+## Nitro V local rendering (ComfyUI)
+
+NoveltyForge is still the **planning, originality, and review layer**. An optional local ComfyUI bridge now accepts its existing prompts and renders sequential candidate images without changing the established design rolls or style lock. It does **not** train on ratings, automatically judge originality, or bypass visual review. For installation and usage on an RTX 4050 6 GB Nitro V, see [Nitro V + ComfyUI setup](docs/nitrov-comfyui.md). Keep personal profiles and image references private.
+
 ## License
 
 MIT.
