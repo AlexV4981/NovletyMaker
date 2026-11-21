@@ -214,6 +214,32 @@ CATALOG: dict[str, list[str]] = {
     ],
 }
 
+# Rendering style is locked separately from the novelty layers; never roll it.
+# Never add style to CATALOG, ASPECTS, CHECK_FEATURES or collision weights.
+STYLE_PRESETS: dict[str, dict[str, str]] = {
+    "anime-2d": {
+        "name": "Hand-drawn 2D anime illustration",
+        "positive": "Expressive anime faces, clean illustrated linework, polished cel shading, stylized hair, coherent anatomy and intentionally drawn materials.",
+        "negative": "No hyperrealism, photographic skin, live-action facial features, 3D CGI look, or photorealistic rendering.",
+    },
+    "illustration-2d": {
+        "name": "Stylized 2D illustration",
+        "positive": "Graphic contours, controlled illustrative shading, readable stylized shapes, coherent drawn textures.",
+        "negative": "No photographic faces, hyperrealistic skin, or realistic CGI appearance.",
+    },
+    "painterly-2d": {
+        "name": "Painterly 2D illustration",
+        "positive": "Expressive hand-painted brushwork, painterly edges, purposeful color harmony, and stylized anatomy.",
+        "negative": "No live-action appearance, realistic CGI, or photographic skin textures.",
+    },
+    "stylized-3d": {
+        "name": "Stylized 3D render",
+        "positive": "Deliberately art-directed stylized rendering, shaped materials, and nonphotographic lighting.",
+        "negative": "No hyperrealistic human skin or live-action likeness.",
+    },
+}
+DEFAULT_STYLE = "anime-2d"
+
 ASPECTS = tuple(CATALOG) + ("preference_influence",)
 HARD_UNIQUE = ("role", "garment_architecture")
 CHECK_FEATURES = ("role", "silhouette", "garment_architecture", "hair", "palette", "material", "motif", "prop")
@@ -347,7 +373,11 @@ def char_id(master_seed: int, number: int, attempt: int) -> str:
     return "nf-" + hashlib.sha256(source.encode("utf-8")).hexdigest()[:12]
 
 
-def make_prompt(item: dict, profile: dict, mode: str = "personalized") -> str:
+def make_prompt(item: dict, profile: dict, mode: str = "personalized",
+                render_style: str = DEFAULT_STYLE) -> str:
+    if render_style not in STYLE_PRESETS:
+        raise ValueError(f"Unknown preselected render style: {render_style}")
+    style = STYLE_PRESETS[render_style]
     c = item["selected"]
     if mode == "personalized":
         likes = "\n".join(f"- {x}" for x in profile["likes"])
@@ -378,6 +408,15 @@ Apply basic, nonpersonal design craft only: readable silhouettes, coherent mater
 
 Generate **exactly one** original adult character as a polished, production-ready reference sheet. This request is for a **single character only**; no multi-character grid or collage, no second character concept, no variations of earlier AI-made characters.
 
+## PRESELECTED RENDERING STYLE — immutable for this run
+
+- Style ID: {render_style}
+- Rendering contract: {style['name']}
+- Required visual execution: {style['positive']}
+- Forbidden styles: {style['negative']}
+
+The user-selected rendering style is decided BEFORE the independent novelty rolls. Keep it unchanged through every image, retry and review, irrespective of role, materials, palette or costume. Style is NOT an archetype, NOT a randomized feature, NOT a collision feature, and NOT influenced by preference-influence strength. A render in the wrong style fails visual review; do not reroll the underlying character to fix a style mismatch.
+
 ## Locked independent blueprint
 
 - Narrative role: {c['role']}
@@ -406,11 +445,14 @@ Treat these as **different, deliberately selected design variables**, not a menu
 
 ## Final checks
 
-{('Prioritize originality and confirmed user-fit independently.' if mode == 'personalized' else 'Prioritize concept diversity and general craft only; personal user-fit is UNKNOWN in forced mode.')} Do not reuse previous characters' job+outfit+palette+prop clusters, even if they were rated highly. No copied copyrighted franchise character. If the image doesn't obey the spec, flag it for rejection rather than renaming it.
+{('Prioritize originality and confirmed user-fit independently.' if mode == 'personalized' else 'Prioritize concept diversity and general craft only; personal user-fit is UNKNOWN in forced mode.')} Do not reuse previous characters' job+outfit+palette+prop clusters, even if they were rated highly. No copied copyrighted franchise character. If the image doesn't obey the spec or the locked art style, reject it rather than renaming it.
 """
 
 
-def create_plan(profile: dict, history: dict, count: int, seed: int, mode: str = "personalized") -> dict:
+def create_plan(profile: dict, history: dict, count: int, seed: int,
+                mode: str = "personalized", render_style: str = DEFAULT_STYLE) -> dict:
+    if render_style not in STYLE_PRESETS:
+        raise ValueError(f"Unknown preselected render style: {render_style}")
     previous = list(history["entries"])
     designs = []
     for number in range(1, count + 1):
@@ -429,6 +471,9 @@ def create_plan(profile: dict, history: dict, count: int, seed: int, mode: str =
         "master_seed": seed,
         "seed_scope": "Local design choices ONLY; not the image generator's seed",
         "generation_mode": mode,
+        "render_style": render_style,
+        "render_style_contract": STYLE_PRESETS[render_style].copy(),
+        "render_style_scope": "Preselected before design rolls; excluded from RNG and originality checks",
         "personalization_claimed": mode == "personalized",
         "profile_digest": profile_digest(profile) if mode == "personalized" else None,
         "disclaimer": None if mode == "personalized" else (
@@ -469,12 +514,12 @@ def plan_cmd(args: argparse.Namespace) -> None:
     seed = args.seed if args.seed is not None else secrets.randbits(63)
     if seed < 0:
         raise ValueError("--seed must be nonnegative.")
-    manifest = create_plan(profile, history, args.count, seed, mode=mode)
+    manifest = create_plan(profile, history, args.count, seed, mode=mode, render_style=args.style)
     output = args.output
     (output / "prompts").mkdir(parents=True, exist_ok=True)
     atomic_json_write(output / "manifest.json", manifest)
     for item in manifest["designs"]:
-        prompt = make_prompt(item, profile, mode=mode)
+        prompt = make_prompt(item, profile, mode=mode, render_style=manifest["render_style"])
         (output / "prompts" / f"character-{item['number']:02}.md").write_text(prompt, encoding="utf-8")
     if mode == "personalized":
         print(f"PASS: confirmed preferences used; planned {args.count} distinct blueprint(s).")
@@ -482,6 +527,7 @@ def plan_cmd(args: argparse.Namespace) -> None:
         print("WARNING: FORCED UNPERSONALIZED MODE. No taste calibration was performed.")
         print("WARNING: Results are NOT preference-tailored. Neither originality nor image quality is guaranteed.")
         print(f"Planned {args.count} diverse blueprint(s) using generic design principles.")
+    print(f"Locked render style: {manifest['render_style']} (excluded from novelty rolls)")
     print(f"Master seed: {seed} (local planner ONLY, not the image model)")
     print(f"Saved: {output / 'manifest.json'}")
     print(f"NEXT: generate exactly one prompt/image at a time; VISUALLY inspect, record, then continue.")
@@ -551,6 +597,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Explicitly bypass preference calibration. NOT personalized.")
     p.add_argument("--acknowledge-disclaimer", action="store_true",
                    help="Acknowledge forced mode is unpersonalized and quality/repetition are not guaranteed.")
+    p.add_argument("--style", choices=sorted(STYLE_PRESETS), default=DEFAULT_STYLE,
+                   help="Preselect rendering style before novelty rolls (default: anime-2d).")
     p.add_argument("--history", type=Path, default=Path("noveltyforge-history.json"))
     p.add_argument("--count", type=int, default=1)
     p.add_argument("--seed", type=int, default=None)
