@@ -490,4 +490,103 @@ def plan_cmd(args: argparse.Namespace) -> None:
 def validate_cmd(args: argparse.Namespace) -> None:
     p = validate_profile(load_json(args.profile))
     print(f"PASS: user-confirmed preference gate satisfied for {p['medium']}.")
-    print(f"Evidence: {len(p['likes'])} likes,
+    print(f"Evidence: {len(p['likes'])} likes, {len(p['dislikes'])} dislikes, "
+          f"{len(p.get('rated_examples', []))} ratings; confirmation recorded.")
+
+
+def record_cmd(args: argparse.Namespace) -> None:
+    if not args.visual_check:
+        raise ValueError("A record requires --visual-check after examining the actual image; the script cannot inspect it.")
+    if not args.notes or not args.notes.strip():
+        raise ValueError("A record requires --notes describing visual inspection or rejection evidence.")
+    if args.status == "rejected" and not args.reason:
+        raise ValueError("Rejected images require --reason explaining what failed.")
+    if args.appeal is not None or args.originality is not None:
+        if not args.rated_by:
+            raise ValueError("Numeric scores require --rated-by user|agent; do not attribute predicted scores to user.")
+    manifest = load_json(args.manifest)
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("designs"), list):
+        raise ValueError("Manifest is invalid.")
+    matches = [d for d in manifest["designs"] if d.get("number") == args.index]
+    if len(matches) != 1:
+        raise ValueError(f"Character index {args.index} not found exactly once in manifest.")
+    item = matches[0]
+    history = load_history(args.history)
+    if any(e.get("id") == item["id"] for e in history["entries"]):
+        raise ValueError("That design ID is already recorded. Avoid duplicates.")
+    observed = None
+    if args.observed_features:
+        observed = load_json(args.observed_features)
+        if not isinstance(observed, dict):
+            raise ValueError("Observed features must be a JSON object.")
+    record = {
+        "id": item["id"],
+        "recorded_utc": datetime.now(timezone.utc).isoformat(),
+        "status": args.status,
+        "visual_check_attested": True,
+        "notes": args.notes.strip(),
+        "reason": args.reason or None,
+        "selected": item["selected"],
+        "observed_features": observed,
+        "appeal_rating": args.appeal,
+        "originality_rating": args.originality,
+        "rated_by": args.rated_by,
+        "image_path": args.image_path,
+    }
+    history["entries"].append(record)
+    atomic_json_write(args.history, history)
+    print(f"Recorded {item['id']} as {args.status} in {args.history}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("validate-profile", help="Fail closed unless actual user preferences are confirmed.")
+    p.add_argument("--profile", type=Path, required=True)
+    p.set_defaults(func=validate_cmd)
+    p = sub.add_parser("plan", help="Plan original designs and generate prompts; personalized unless explicitly forced.")
+    p.add_argument("--profile", type=Path, default=None,
+                   help="User-confirmed preferences (required unless explicitly forcing unpersonalized mode).")
+    p.add_argument("--force-unpersonalized", action="store_true",
+                   help="Explicitly bypass preference calibration. NOT personalized.")
+    p.add_argument("--acknowledge-disclaimer", action="store_true",
+                   help="Acknowledge forced mode is unpersonalized and quality/repetition are not guaranteed.")
+    p.add_argument("--history", type=Path, default=Path("noveltyforge-history.json"))
+    p.add_argument("--count", type=int, default=1)
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--output", type=Path, default=Path("noveltyforge-output"))
+    p.set_defaults(func=plan_cmd)
+    p = sub.add_parser("record", help="Record human/agent-verified visual result for future novelty checks.")
+    p.add_argument("--manifest", type=Path, required=True)
+    p.add_argument("--index", type=int, required=True)
+    p.add_argument("--history", type=Path, default=Path("noveltyforge-history.json"))
+    p.add_argument("--status", choices=("accepted", "rejected"), required=True)
+    p.add_argument("--visual-check", action="store_true", help="Attest that the actual rendered image was inspected.")
+    p.add_argument("--notes", required=True)
+    p.add_argument("--reason", default=None)
+    p.add_argument("--appeal", type=float, default=None)
+    p.add_argument("--originality", type=float, default=None)
+    p.add_argument("--rated-by", choices=("user", "agent"), default=None)
+    p.add_argument("--observed-features", type=Path, default=None)
+    p.add_argument("--image-path", default=None)
+    p.set_defaults(func=record_cmd)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    for key in ("appeal", "originality"):
+        value = getattr(args, key, None)
+        if value is not None and not 1 <= value <= 10:
+            print(f"ERROR: --{key} must be 1–10", file=sys.stderr)
+            return 2
+    try:
+        args.func(args)
+        return 0
+    except (ValueError, PreferenceError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
