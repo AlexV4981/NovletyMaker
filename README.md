@@ -57,6 +57,23 @@ Place the skill directory inside a GitHub repository:
 
 Compatible GitHub Copilot agents that support repository Agent Skills can discover `SKILL.md`. Other agents must load the instructions according to their own skill system. The skill cannot compel an AI that does not support or follow skills.
 
+## Preselect the art style — independent of originality
+
+Choose the **rendering medium before planning characters**. Style is a fixed rendering contract, not a randomly sampled character archetype. It does not participate in novelty rolls, collision scoring, character IDs, role/silhouette/outfit selection, or preference-influence strength.
+
+The default is `anime-2d`: **drawn 2D anime art only**, including stylized anime faces, clean linework and cel shading; **no hyperrealistic skin, photorealism, or CGI-looking characters**. This is a visual treatment and does **not** force gothic fashion, a standard anime costume, a repeated hairstyle, color palette, or a character archetype.
+
+Choose explicitly with:
+
+```bash
+python .github/skills/noveltyforge/scripts/noveltyforge.py plan \
+  --profile ./my-preferences.json --style anime-2d \
+  --history ./noveltyforge-history.json --count 1 \
+  --output ./noveltyforge-output
+```
+
+Available rendering contracts: `anime-2d` (default), `illustration-2d`, `painterly-2d`, `stylized-3d`. The manifest stores `render_style` and `render_style_contract`; every generated prompt puts the immutable style lock **before** the independently rolled design blueprint. When a renderer violates style, reject/regenerate the image **without** re-rolling an otherwise original design. Visual compliance must still be inspected; this is a prompt/planner constraint, not a guarantee that the image model will obey it.
+
 ## Quick start — personalized (recommended)
 
 Copy `references/profile-template.json` to a **private/untracked** file, then fill it based on real user confirmation:
