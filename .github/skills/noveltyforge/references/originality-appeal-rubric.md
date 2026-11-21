@@ -1,5 +1,11 @@
 # Originality and appeal are two independent evaluations
 
+## Style compliance (separate gate, before originality and appeal)
+
+Select the rendering style once **before** any character design rolls. For `anime-2d`, require hand-drawn-looking anime linework, expressive stylized anime facial features and cel/painterly anime shading; reject photorealism, hyperrealistic facial texture, and realistic CGI appearance. Style is **not** a character theme or archetype, and should never contribute to role, clothing, hair, palette, motif, pose, or composition collision scores.
+
+A wrong-style render must be retried with the **same locked character blueprint**. A repeated concept should instead be rejected by the existing originality firewall. Keep these failure reasons separate in notes and ratings.
+
 ## Originality gate (structural)
 
 Check the rendered design, not merely the prompt:
