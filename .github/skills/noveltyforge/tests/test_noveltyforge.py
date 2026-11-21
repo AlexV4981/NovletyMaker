@@ -109,6 +109,50 @@ class PlanningTests(unittest.TestCase):
             self.assertIn("NOT personalized", prompt)
             self.assertNotIn("The current user confirmed", prompt)
 
+    def test_style_preselected_without_changing_novelty(self):
+        """Switching styles must not alter rolls, candidate IDs or collision decisions."""
+        profile, history, seed = example_profile(), {"entries": []}, 3
+        anime = opg.create_plan(profile, history, 3, seed, render_style="anime-2d")
+        other = opg.create_plan(profile, history, 3, seed, render_style="painterly-2d")
+        self.assertEqual(anime["designs"], other["designs"])
+        self.assertEqual(anime["render_style"], "anime-2d")
+        self.assertEqual(other["render_style"], "painterly-2d")
+        self.assertEqual(anime["render_style_contract"], opg.STYLE_PRESETS["anime-2d"])
+        self.assertNotIn("style", opg.CATALOG)
+        self.assertNotIn("render_style", opg.ASPECTS)
+        self.assertNotIn("style", opg.CHECK_FEATURES)
+        self.assertEqual(opg.collision(anime["designs"][0], other["designs"][1:]), None)
+
+    def test_locked_anime_style_is_in_prompt_before_blueprint(self):
+        profile = example_profile()
+        design = opg.create_plan(profile, {"entries": []}, 1, 55)["designs"][0]
+        prompt = opg.make_prompt(design, profile, render_style="anime-2d")
+        self.assertLess(prompt.index("PRESELECTED RENDERING STYLE"), prompt.index("Locked independent blueprint"))
+        self.assertIn("cel shading", prompt)
+        self.assertIn("No hyperrealism", prompt)
+        self.assertIn("NOT a randomized feature", prompt)
+
+    def test_cli_style_is_locked_in_manifest_and_prompt(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            profile_path = root / "profile.json"
+            profile_path.write_text(json.dumps(example_profile()), encoding="utf-8")
+            out = root / "out"
+            result = opg.main(["plan", "--profile", str(profile_path),
+                               "--style", "anime-2d", "--seed", "123",
+                               "--count", "2", "--output", str(out)])
+            self.assertEqual(result, 0)
+            manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["render_style"], "anime-2d")
+            self.assertEqual(len(manifest["designs"]), 2)
+            for i in (1, 2):
+                prompt = (out / "prompts" / f"character-{i:02}.md").read_text(encoding="utf-8")
+                self.assertIn("Style ID: anime-2d", prompt)
+
+    def test_invalid_render_style_fails_closed(self):
+        with self.assertRaises(ValueError):
+            opg.create_plan(example_profile(), {"entries": []}, 1, 1, render_style="photoreal")
+
     def test_cli_record_requires_visual_check(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td)

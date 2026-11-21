@@ -1,0 +1,24 @@
+name: NoveltyForge tests
+
+on:
+  push:
+    paths:
+      - ".github/skills/noveltyforge/**"
+      - ".github/workflows/noveltyforge-tests.yml"
+  pull_request:
+    paths:
+      - ".github/skills/noveltyforge/**"
+      - ".github/workflows/noveltyforge-tests.yml"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile script
+        run: python -m py_compile .github/skills/noveltyforge/scripts/noveltyforge.py
+      - name: Run unittest suite
+        run: python -m unittest discover -s .github/skills/noveltyforge/tests -v

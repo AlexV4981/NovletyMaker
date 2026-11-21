@@ -22,6 +22,14 @@ It separates independent design choices from aesthetics:
 
 **Scope:** The bundled Python catalog and reference-sheet prompts currently focus on original **adult character designs**. The conceptual procedure can inform other creative media, but the provided script does not claim native creature, logo, animation, or arbitrary-style support.
 
+## Stage 0 — preselect and lock rendering style (before all novelty rolls)
+
+Determine the user's required rendering style **first**; use `--style anime-2d` for a user who requires exclusively drawn anime illustrations. The default is `anime-2d` when no other style has been explicitly selected. Other supported presets are `illustration-2d`, `painterly-2d`, and `stylized-3d`; a user-selected override must be respected.
+
+**Style is not a character archetype.** Never treat anime as a required hairstyle, outfit, genre, motif, palette, pose or silhouette. Lock style as a top-level rendering contract ahead of the design blueprint, and keep the existing 1–1000 rolls and originality checks fully independent from it. The planner must not randomize style and must not weight it in the collision firewall. The selected style applies to *every image in a batch* and to retries. Do not let a character's profession/material imply photorealism or CGI when anime-2d is locked.
+
+On review, a wrong-style image is a **rendering failure**, not evidence that the independent blueprint was insufficiently novel. Re-render the same blueprint in the locked style, unless there is a separate genuine originality failure. Continue enforcing the existing single-character-per-call, sequential review and user preference requirements.
+
 ## Mandatory mode selection
 
 ### Default: personalized mode (the intended workflow)
