@@ -400,4 +400,94 @@ Treat these as **different, deliberately selected design variables**, not a menu
 - Clear front, side, back and optional three-quarter **consistent** full-body views of this same character.
 - A small grid of distinctive expressions and eye/face details.
 - Exploded garment construction: identifiable separate pieces and fabric/material closeups.
-- Props, motif
+- Props, motif closeups and palette swatches.
+- Clean light backdrop, professional panel grid, crisp readability, nothing cropped.
+- Varied composition and outfit shape, not a standing, identical three-quarter portrait as a default.
+
+## Final checks
+
+{('Prioritize originality and confirmed user-fit independently.' if mode == 'personalized' else 'Prioritize concept diversity and general craft only; personal user-fit is UNKNOWN in forced mode.')} Do not reuse previous characters' job+outfit+palette+prop clusters, even if they were rated highly. No copied copyrighted franchise character. If the image doesn't obey the spec, flag it for rejection rather than renaming it.
+"""
+
+
+def create_plan(profile: dict, history: dict, count: int, seed: int, mode: str = "personalized") -> dict:
+    previous = list(history["entries"])
+    designs = []
+    for number in range(1, count + 1):
+        for attempt in range(1, 5001):
+            candidate = make_candidate(seed, number, attempt)
+            if not collision(candidate, previous):
+                candidate["id"] = char_id(seed, number, attempt)
+                designs.append(candidate)
+                previous.append(candidate)
+                break
+        else:
+            raise ValueError("Cannot find enough distinct concepts with this history/catalog; expand the catalog or change constraints.")
+    return {
+        "schema_version": "1.0",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "master_seed": seed,
+        "seed_scope": "Local design choices ONLY; not the image generator's seed",
+        "generation_mode": mode,
+        "personalization_claimed": mode == "personalized",
+        "profile_digest": profile_digest(profile) if mode == "personalized" else None,
+        "disclaimer": None if mode == "personalized" else (
+            "Forced without confirmed preferences: designs are NOT personalized; "
+            "originality and quality are NOT guaranteed; visual review is necessary."),
+        "count": len(designs),
+        "designs": designs,
+        "render_protocol": "Generate one image per design, inspect and record after each; never send a collage prompt.",
+    }
+
+
+def atomic_json_write(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def plan_cmd(args: argparse.Namespace) -> None:
+    if args.force_unpersonalized:
+        if not args.acknowledge_disclaimer:
+            raise PreferenceError("Forced mode requires --acknowledge-disclaimer. "
+                                  "The result is NOT personalized; repetition/quality are not guaranteed.")
+        # Deliberately ignore any partial/unverified profile: do not launder guesses as user taste.
+        profile = {"status": "unpersonalized", "likes": [], "dislikes": [], "medium": "character reference sheets"}
+        mode = "unpersonalized-forced"
+    else:
+        if args.acknowledge_disclaimer:
+            raise PreferenceError("--acknowledge-disclaimer requires --force-unpersonalized.")
+        if args.profile is None:
+            raise PreferenceError("A user-confirmed --profile is REQUIRED; alternatively, "
+                                  "explicitly opt in with --force-unpersonalized --acknowledge-disclaimer.")
+        profile = validate_profile(load_json(args.profile))
+        mode = "personalized"
+    history = load_history(args.history)
+    if not 1 <= args.count <= 10:
+        raise ValueError("--count must be between 1 and 10; recommend 1 for sequential review.")
+    seed = args.seed if args.seed is not None else secrets.randbits(63)
+    if seed < 0:
+        raise ValueError("--seed must be nonnegative.")
+    manifest = create_plan(profile, history, args.count, seed, mode=mode)
+    output = args.output
+    (output / "prompts").mkdir(parents=True, exist_ok=True)
+    atomic_json_write(output / "manifest.json", manifest)
+    for item in manifest["designs"]:
+        prompt = make_prompt(item, profile, mode=mode)
+        (output / "prompts" / f"character-{item['number']:02}.md").write_text(prompt, encoding="utf-8")
+    if mode == "personalized":
+        print(f"PASS: confirmed preferences used; planned {args.count} distinct blueprint(s).")
+    else:
+        print("WARNING: FORCED UNPERSONALIZED MODE. No taste calibration was performed.")
+        print("WARNING: Results are NOT preference-tailored. Neither originality nor image quality is guaranteed.")
+        print(f"Planned {args.count} diverse blueprint(s) using generic design principles.")
+    print(f"Master seed: {seed} (local planner ONLY, not the image model)")
+    print(f"Saved: {output / 'manifest.json'}")
+    print(f"NEXT: generate exactly one prompt/image at a time; VISUALLY inspect, record, then continue.")
+
+
+def validate_cmd(args: argparse.Namespace) -> None:
+    p = validate_profile(load_json(args.profile))
+    print(f"PASS: user-confirmed preference gate satisfied for {p['medium']}.")
+    print(f"Evidence: {len(p['likes'])} likes,
