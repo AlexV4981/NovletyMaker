@@ -196,4 +196,100 @@ CATALOG: dict[str, list[str]] = {
         "standing in balanced contrapposto, a compact prop held close",
         "crouched to inspect an artifact with one hand supporting weight",
         "sitting on a low trunk, knees together, prop across lap",
-        "spinning lightly on one foot with articulated clothi
+        "spinning lightly on one foot with articulated clothing visible",
+    ],
+    "camera": [
+        "eye-level full-body with generous negative space on the right",
+        "slightly elevated three-quarter view, asymmetrically framed",
+        "low three-quarter angle emphasizing sculptural clothing volumes",
+        "side-profile dominant key art with orthographic views separate",
+        "front-facing symmetrical portrait alongside asymmetrically arranged turnarounds",
+        "full-body rear three-quarter hero view plus clear front orthographic inset",
+        "eye-level candid medium shot with full-body turnaround occupying the main sheet",
+        "low frontal shot with dynamic negative space above",
+        "seated eye-level composition with torso rotated slightly away",
+        "wide camera capturing the full silhouette, character placed off-center",
+        "overhead-ish three-quarter angle emphasizing the constructed silhouette",
+        "single sweeping diagonal composition balanced by rigid orthographic columns",
+    ],
+}
+
+ASPECTS = tuple(CATALOG) + ("preference_influence",)
+HARD_UNIQUE = ("role", "garment_architecture")
+CHECK_FEATURES = ("role", "silhouette", "garment_architecture", "hair", "palette", "material", "motif", "prop")
+
+
+class PreferenceError(ValueError):
+    """The preference gate has not been satisfied."""
+
+
+def load_json(path: Path) -> Any:
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError as exc:
+        raise ValueError(f"Missing file: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
+
+
+def quality_items(profile: dict, field: str, minimum: int) -> list[str]:
+    raw = profile.get(field)
+    if not isinstance(raw, list):
+        raise PreferenceError(f"Preference gate FAIL: '{field}' must be a list.")
+    cleaned = [x.strip() for x in raw if isinstance(x, str) and x.strip()]
+    if len(set(x.casefold() for x in cleaned)) < minimum:
+        raise PreferenceError(f"Preference gate FAIL: provide at least {minimum} distinct '{field}' entries.")
+    for entry in cleaned:
+        if "replace with" in entry.lower() or "placeholder" in entry.lower():
+            raise PreferenceError(f"Preference gate FAIL: '{field}' still has template placeholders.")
+    return cleaned
+
+
+def validate_profile(profile: Any) -> dict:
+    if not isinstance(profile, dict):
+        raise PreferenceError("Preference gate FAIL: profile must be a JSON object.")
+    if profile.get("status") != "confirmed" or profile.get("confirmed_by_user") is not True:
+        raise PreferenceError("Preference gate FAIL: current user has not confirmed this preference profile.")
+    evidence = profile.get("confirmation_evidence")
+    if not isinstance(evidence, str) or len(evidence.strip()) < 10 or "replace with" in evidence.casefold():
+        raise PreferenceError("Preference gate FAIL: provide confirmation_evidence describing where the current user's confirmation came from.")
+    likes = quality_items(profile, "likes", 3)
+    dislikes = quality_items(profile, "dislikes", 2)
+    examples = profile.get("rated_examples", [])
+    if not isinstance(examples, list):
+        raise PreferenceError("Preference gate FAIL: 'rated_examples' must be a list.")
+    valid_examples = 0
+    for e in examples:
+        if not isinstance(e, dict) or not isinstance(e.get("label"), str) or not e["label"].strip():
+            raise PreferenceError("Preference gate FAIL: each rated example needs a nonblank label.")
+        score = e.get("appeal")
+        if isinstance(score, bool) or not isinstance(score, (int, float)) or not 1 <= score <= 10:
+            raise PreferenceError("Preference gate FAIL: each rated example appeal must be a number 1–10.")
+        valid_examples += 1
+    if not valid_examples and profile.get("preference_summary_confirmed") is not True:
+        raise PreferenceError("Preference gate FAIL: need a real rated example or an explicitly confirmed preference summary.")
+    medium = profile.get("medium", "visual design")
+    if not isinstance(medium, str) or not medium.strip():
+        raise PreferenceError("Preference gate FAIL: 'medium' must be nonblank text.")
+    return {**profile, "likes": likes, "dislikes": dislikes}
+
+
+def profile_digest(profile: dict) -> str:
+    data = json.dumps(profile, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()[:16]
+
+
+def roll(master_seed: int, character_number: int, attempt: int, aspect: str) -> int:
+    """Each aspect is independently determined by a stable keyed cryptographic hash."""
+    keyed = f"NoveltyForge-v2|{master_seed}|{character_number}|{attempt}|{aspect}".encode("utf-8")
+    stream_seed = int.from_bytes(hashlib.sha256(keyed).digest(), "big")
+    return random.Random(stream_seed).randint(1, 1000)
+
+
+def select_item(options: list[str], value: int) -> str:
+    return options[((value - 1) * len(options)) // 1000]
+
+
+def make_candidate(master_seed: int, number: int, attempt: int) -> dict:
+    rolls = {a: roll(master_seed, number, a
